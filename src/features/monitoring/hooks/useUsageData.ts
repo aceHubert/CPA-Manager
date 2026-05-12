@@ -9,7 +9,8 @@ import {
   type UsageExportResponse,
   type UsageImportResponse,
 } from '@/services/api/usageService';
-import { useAuthStore, useUsageServiceStore } from '@/stores';
+import { useAuthStore, useConfigStore } from '@/stores';
+import type { Config } from '@/types/config';
 import { detectApiBaseFromLocation } from '@/utils/connection';
 import { clearModelPrices, loadModelPrices, saveModelPrices, type ModelPrice } from '@/utils/usage';
 
@@ -36,11 +37,24 @@ export interface UseUsageDataReturn {
   loadUsage: () => Promise<void>;
 }
 
+export const resolveConfiguredUsageServiceBase = async (
+  config: Config | null | undefined,
+  fetchConfig: () => Promise<Config>
+): Promise<string> => {
+  const resolvedConfig = config ?? (await fetchConfig());
+  const service = resolvedConfig.externalUsageService;
+  return service?.configured && service.serviceBase ? service.serviceBase : '';
+};
+
 export function useUsageData(): UseUsageDataReturn {
   const apiBase = useAuthStore((state) => state.apiBase);
   const managementKey = useAuthStore((state) => state.managementKey);
-  const usageServiceEnabled = useUsageServiceStore((state) => state.enabled);
-  const usageServiceBase = useUsageServiceStore((state) => state.serviceBase);
+  const config = useConfigStore((state) => state.config);
+  const fetchConfig = useConfigStore((state) => state.fetchConfig);
+  const usageServiceBase = config?.externalUsageService?.serviceBase ?? '';
+  const usageServiceConfigured = Boolean(
+    config?.externalUsageService?.configured && usageServiceBase
+  );
   const [usage, setUsage] = useState<UsagePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -49,8 +63,11 @@ export function useUsageData(): UseUsageDataReturn {
   const requestIdRef = useRef(0);
 
   const resolveUsageServiceBase = useCallback(async (): Promise<string> => {
-    if (usageServiceEnabled && usageServiceBase) {
-      return usageServiceBase;
+    const configuredBase = await resolveConfiguredUsageServiceBase(config, () =>
+      fetchConfig(undefined)
+    );
+    if (configuredBase) {
+      return configuredBase;
     }
 
     const candidates = Array.from(
@@ -73,7 +90,7 @@ export function useUsageData(): UseUsageDataReturn {
     }
 
     return '';
-  }, [apiBase, usageServiceBase, usageServiceEnabled]);
+  }, [apiBase, config, fetchConfig]);
 
   const getModelPricesFromApi = useCallback(async (): Promise<ModelPricesResponse> => {
     const serviceBase = await resolveUsageServiceBase();
@@ -147,10 +164,12 @@ export function useUsageData(): UseUsageDataReturn {
     setError('');
 
     try {
-      const payload =
-        usageServiceEnabled && usageServiceBase
-          ? await usageServiceApi.getUsage(usageServiceBase, managementKey)
-          : await apiClient.get<UsagePayload>('/usage');
+      const configuredBase = await resolveConfiguredUsageServiceBase(config, () =>
+        fetchConfig(undefined)
+      );
+      const payload = configuredBase
+        ? await usageServiceApi.getUsage(configuredBase, managementKey)
+        : await apiClient.get<UsagePayload>('/usage');
       if (requestIdRef.current !== requestId) return;
       setUsage(payload ?? null);
       setLastRefreshedAt(new Date());
@@ -162,7 +181,7 @@ export function useUsageData(): UseUsageDataReturn {
         setLoading(false);
       }
     }
-  }, [managementKey, usageServiceBase, usageServiceEnabled]);
+  }, [config, fetchConfig, managementKey]);
 
   useEffect(() => {
     void loadModelPricesFromStorage();
@@ -193,7 +212,7 @@ export function useUsageData(): UseUsageDataReturn {
     error,
     lastRefreshedAt,
     modelPrices,
-    usageServiceAvailable: Boolean(usageServiceEnabled && usageServiceBase),
+    usageServiceAvailable: usageServiceConfigured,
     setModelPrices,
     syncModelPrices,
     exportUsage: exportUsageFromApi,

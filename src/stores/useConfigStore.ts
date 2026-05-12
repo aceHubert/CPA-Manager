@@ -4,9 +4,12 @@
  */
 
 import { create } from 'zustand';
+import { parse as parseYaml } from 'yaml';
 import type { Config } from '@/types';
 import type { RawConfigSection } from '@/types/config';
 import { configApi } from '@/services/api/config';
+import { configFileApi } from '@/services/api/configFile';
+import { normalizeConfigResponse } from '@/services/api/transformers';
 import { CACHE_EXPIRY_MS } from '@/utils/constants';
 
 interface ConfigCache {
@@ -32,6 +35,7 @@ interface ConfigState {
 
 let configRequestToken = 0;
 let inFlightConfigRequest: { id: number; promise: Promise<Config> } | null = null;
+const FULL_CACHE_KEY = '__full__';
 
 const SECTION_KEYS: RawConfigSection[] = [
   'debug',
@@ -53,6 +57,8 @@ const SECTION_KEYS: RawConfigSection[] = [
   'openai-compatibility',
   'oauth-excluded-models'
 ];
+
+const EXTERNAL_SECTION_KEY: RawConfigSection[] = ['external-usage-service'];
 
 const extractSectionValue = (config: Config | null, section?: RawConfigSection) => {
   if (!config) return undefined;
@@ -93,10 +99,56 @@ const extractSectionValue = (config: Config | null, section?: RawConfigSection) 
       return config.openaiCompatibility;
     case 'oauth-excluded-models':
       return config.oauthExcludedModels;
+    case 'external-usage-service':
+      return config.externalUsageService;
     default:
       if (!section) return undefined;
       return config.raw?.[section];
   }
+};
+
+const fetchConfigFromFile = async (): Promise<Config> => {
+  const content = await configFileApi.fetchConfigYaml();
+  const parsed = parseYaml(content) || {};
+  return normalizeConfigResponse(parsed);
+};
+
+const mergeExternalSections = (base: Config, externalConfig: Config): Config => {
+  const raw = { ...(base.raw || {}) };
+  const externalRaw = externalConfig.raw || {};
+  ['external-usage-service', 'externalUsageService', 'usage-service', 'usageService'].forEach(
+    (key) => {
+      if (Object.prototype.hasOwnProperty.call(externalRaw, key)) {
+        raw[key] = externalRaw[key];
+      }
+    }
+  );
+
+  return {
+    ...base,
+    raw,
+    externalUsageService: externalConfig.externalUsageService,
+  };
+};
+
+const withExternalSectionsFromFile = async (base: Config): Promise<Config> => {
+  try {
+    return mergeExternalSections(base, await fetchConfigFromFile());
+  } catch {
+    return base;
+  }
+};
+
+const buildConfigCache = (cache: Map<string, ConfigCache>, data: Config, timestamp: number) => {
+  const nextCache = new Map(cache);
+  nextCache.set(FULL_CACHE_KEY, { data, timestamp });
+  SECTION_KEYS.forEach((key) => {
+    const value = extractSectionValue(data, key);
+    if (value !== undefined) {
+      nextCache.set(key, { data: value, timestamp });
+    }
+  });
+  return nextCache;
 };
 
 export const useConfigStore = create<ConfigState>((set, get) => ({
@@ -109,7 +161,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     const { cache, isCacheValid } = get();
 
     // 检查缓存
-    const cacheKey = section || '__full__';
+    const cacheKey = section || FULL_CACHE_KEY;
     if (!forceRefresh && isCacheValid(section)) {
       const cached = cache.get(cacheKey);
       if (cached) {
@@ -117,9 +169,46 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       }
     }
 
+    if (section && EXTERNAL_SECTION_KEY.includes(section)) {
+      set({ loading: true, error: null });
+
+      try {
+        const fileConfig = await fetchConfigFromFile();
+        const value = extractSectionValue(fileConfig, section);
+        const now = Date.now();
+        const currentState = get();
+        const nextCache = new Map(currentState.cache);
+        nextCache.set(section, { data: value, timestamp: now });
+
+        const fullCached = currentState.cache.get(FULL_CACHE_KEY)?.data as Config | undefined;
+        const baseConfig = currentState.config || fullCached;
+        const nextConfig = baseConfig ? mergeExternalSections(baseConfig, fileConfig) : null;
+
+        if (nextConfig && currentState.cache.has(FULL_CACHE_KEY)) {
+          nextCache.set(FULL_CACHE_KEY, { data: nextConfig, timestamp: now });
+        }
+
+        set({
+          config: nextConfig || currentState.config,
+          cache: nextCache,
+          loading: false,
+        });
+
+        return value;
+      } catch (error: unknown) {
+        const message =
+          error instanceof Error ? error.message : typeof error === 'string' ? error : 'Failed to fetch config';
+        set({
+          error: message || 'Failed to fetch config',
+          loading: false,
+        });
+        throw error;
+      }
+    }
+
     // section 缓存未命中但 full 缓存可用时，直接复用已获取到的配置，避免重复 /config 请求
     if (!forceRefresh && section && isCacheValid()) {
-      const fullCached = cache.get('__full__');
+      const fullCached = cache.get(FULL_CACHE_KEY);
       if (fullCached?.data) {
         return extractSectionValue(fullCached.data as Config, section);
       }
@@ -136,7 +225,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
 
     const requestId = (configRequestToken += 1);
     try {
-      const requestPromise = configApi.getConfig();
+      const requestPromise = configApi.getConfig().then(withExternalSectionsFromFile);
       inFlightConfigRequest = { id: requestId, promise: requestPromise };
       const data = await requestPromise;
       const now = Date.now();
@@ -147,14 +236,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       }
 
       // 更新缓存
-      const newCache = new Map(cache);
-      newCache.set('__full__', { data, timestamp: now });
-      SECTION_KEYS.forEach((key) => {
-        const value = extractSectionValue(data, key);
-        if (value !== undefined) {
-          newCache.set(key, { data: value, timestamp: now });
-        }
-      });
+      const newCache = buildConfigCache(cache, data, now);
 
       set({
         config: data,
@@ -241,6 +323,9 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         case 'oauth-excluded-models':
           nextConfig.oauthExcludedModels = value as Config['oauthExcludedModels'];
           break;
+        case 'external-usage-service':
+          nextConfig.externalUsageService = value as Config['externalUsageService'];
+          break;
         default:
           break;
       }
@@ -259,7 +344,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     if (section) {
       newCache.delete(section);
       // 同时清除完整配置缓存
-      newCache.delete('__full__');
+      newCache.delete(FULL_CACHE_KEY);
 
       // Section-level invalidation usually follows an optimistic write path. Invalidate any in-flight
       // full fetch so stale responses can't overwrite newer local changes.
@@ -281,7 +366,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
 
   isCacheValid: (section) => {
     const { cache } = get();
-    const cacheKey = section || '__full__';
+    const cacheKey = section || FULL_CACHE_KEY;
     const cached = cache.get(cacheKey);
 
     if (!cached) return false;

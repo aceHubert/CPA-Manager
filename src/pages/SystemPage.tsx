@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { IconGithub, IconBookOpen, IconExternalLink, IconCode } from '@/components/ui/icons';
@@ -12,15 +11,10 @@ import {
   useNotificationStore,
   useModelsStore,
   useThemeStore,
-  useUsageServiceStore,
 } from '@/stores';
 import { configApi, versionApi } from '@/services/api';
 import { apiKeysApi } from '@/services/api/apiKeys';
-import {
-  normalizeUsageServiceBase,
-  usageServiceApi,
-  type UsageServiceStatus,
-} from '@/services/api/usageService';
+import { usageServiceApi, type UsageServiceStatus } from '@/services/api/usageService';
 import { classifyModels } from '@/utils/models';
 import { STORAGE_KEY_AUTH } from '@/utils/constants';
 import { INLINE_LOGO_JPEG } from '@/assets/logoInline';
@@ -84,9 +78,6 @@ export function SystemPage() {
   const fetchConfig = useConfigStore((state) => state.fetchConfig);
   const clearCache = useConfigStore((state) => state.clearCache);
   const updateConfigValue = useConfigStore((state) => state.updateConfigValue);
-  const usageServiceEnabled = useUsageServiceStore((state) => state.enabled);
-  const usageServiceBase = useUsageServiceStore((state) => state.serviceBase);
-  const setUsageServiceConfig = useUsageServiceStore((state) => state.setUsageServiceConfig);
 
   const models = useModelsStore((state) => state.models);
   const modelsLoading = useModelsStore((state) => state.loading);
@@ -103,10 +94,7 @@ export function SystemPage() {
   const [requestLogSaving, setRequestLogSaving] = useState(false);
   const [checkingAppVersion, setCheckingAppVersion] = useState(false);
   const [checkingVersion, setCheckingVersion] = useState(false);
-  const [usageServiceDraftEnabled, setUsageServiceDraftEnabled] = useState(usageServiceEnabled);
-  const [usageServiceDraftBase, setUsageServiceDraftBase] = useState(usageServiceBase);
   const [usageServiceStatus, setUsageServiceStatus] = useState<UsageServiceStatus | null>(null);
-  const [usageServiceSaving, setUsageServiceSaving] = useState(false);
   const [usageServiceChecking, setUsageServiceChecking] = useState(false);
 
   const apiKeysCache = useRef<string[]>([]);
@@ -121,6 +109,9 @@ export function SystemPage() {
   const requestLogEnabled = config?.requestLog ?? false;
   const requestLogDirty = requestLogDraft !== requestLogEnabled;
   const canEditRequestLog = auth.connectionStatus === 'connected' && Boolean(config);
+  const usageServiceConfig = config?.externalUsageService;
+  const usageServiceBase = usageServiceConfig?.serviceBase ?? '';
+  const hasConfiguredUsageService = Boolean(usageServiceConfig?.configured && usageServiceBase);
 
   const appVersion = __APP_VERSION__ || t('system_info.version_unknown');
   const apiVersion = auth.serverVersion || t('system_info.version_unknown');
@@ -324,7 +315,8 @@ export function SystemPage() {
         showNotification(t('system_info.manager_version_is_latest'), 'success');
       }
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+      const message =
+        error instanceof Error ? error.message : typeof error === 'string' ? error : '';
       const suffix = message ? `: ${message}` : '';
       showNotification(`${t('system_info.manager_version_check_error')}${suffix}`, 'error');
     } finally {
@@ -365,90 +357,39 @@ export function SystemPage() {
     }
   }, [auth.serverVersion, showNotification, t]);
 
-  const loadUsageServiceStatus = useCallback(async (base = usageServiceDraftBase) => {
-    const target = base.trim();
-    if (!target) {
-      showNotification(
-        t('usage_service.url_required', { defaultValue: '请先填写 Usage Service 地址' }),
-        'warning'
-      );
-      return null;
-    }
-    setUsageServiceChecking(true);
-    try {
-      const status = await usageServiceApi.getStatus(target, auth.managementKey);
-      setUsageServiceStatus(status);
-      return status;
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : typeof error === 'string' ? error : '';
-      showNotification(
-        `${t('usage_service.status_failed', { defaultValue: 'Usage Service 状态检查失败' })}${message ? `: ${message}` : ''}`,
-        'error'
-      );
-      return null;
-    } finally {
-      setUsageServiceChecking(false);
-    }
-  }, [auth.managementKey, showNotification, t, usageServiceDraftBase]);
-
-  const handleUsageServiceSave = useCallback(async () => {
-    if (!usageServiceDraftEnabled) {
-      setUsageServiceConfig({ enabled: false, serviceBase: '' });
-      setUsageServiceStatus(null);
-      showNotification(
-        t('usage_service.disabled_saved', { defaultValue: '外部 Usage Service 已停用' }),
-        'success'
-      );
-      return;
-    }
-
-    const target = usageServiceDraftBase.trim();
-    if (!target) {
-      showNotification(
-        t('usage_service.url_required', { defaultValue: '请先填写 Usage Service 地址' }),
-        'warning'
-      );
-      return;
-    }
-    if (!auth.apiBase || !auth.managementKey) {
-      showNotification(t('notification.connection_required'), 'warning');
-      return;
-    }
-
-    setUsageServiceSaving(true);
-    try {
-      const normalized = normalizeUsageServiceBase(target);
-      await usageServiceApi.setup(normalized, {
-        cpaBaseUrl: auth.apiBase,
-        managementKey: auth.managementKey,
-      });
-      setUsageServiceConfig({ enabled: true, serviceBase: normalized });
-      const status = await usageServiceApi.getStatus(normalized, auth.managementKey);
-      setUsageServiceStatus(status);
-      showNotification(
-        t('usage_service.saved', { defaultValue: 'Usage Service 已连接并保存' }),
-        'success'
-      );
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : typeof error === 'string' ? error : '';
-      showNotification(
-        `${t('usage_service.save_failed', { defaultValue: 'Usage Service 保存失败' })}${message ? `: ${message}` : ''}`,
-        'error'
-      );
-    } finally {
-      setUsageServiceSaving(false);
-    }
-  }, [
-    auth.apiBase,
-    auth.managementKey,
-    setUsageServiceConfig,
-    showNotification,
-    t,
-    usageServiceDraftBase,
-    usageServiceDraftEnabled,
-  ]);
+  const loadUsageServiceStatus = useCallback(
+    async (base = usageServiceBase, notifyOnError = true) => {
+      const target = base.trim();
+      if (!target) {
+        if (notifyOnError) {
+          showNotification(
+            t('usage_service.url_required', { defaultValue: '请先填写 Usage Service 地址' }),
+            'warning'
+          );
+        }
+        return null;
+      }
+      setUsageServiceChecking(true);
+      try {
+        const status = await usageServiceApi.getStatus(target, auth.managementKey);
+        setUsageServiceStatus(status);
+        return status;
+      } catch (error: unknown) {
+        const message =
+          error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+        if (notifyOnError) {
+          showNotification(
+            `${t('usage_service.status_failed', { defaultValue: 'Usage Service 状态检查失败' })}${message ? `: ${message}` : ''}`,
+            'error'
+          );
+        }
+        return null;
+      } finally {
+        setUsageServiceChecking(false);
+      }
+    },
+    [auth.managementKey, showNotification, t, usageServiceBase]
+  );
 
   useEffect(() => {
     fetchConfig().catch(() => {
@@ -457,9 +398,12 @@ export function SystemPage() {
   }, [fetchConfig]);
 
   useEffect(() => {
-    setUsageServiceDraftEnabled(usageServiceEnabled);
-    setUsageServiceDraftBase(usageServiceBase);
-  }, [usageServiceBase, usageServiceEnabled]);
+    if (!hasConfiguredUsageService) {
+      setUsageServiceStatus(null);
+      return;
+    }
+    void loadUsageServiceStatus(usageServiceBase, false);
+  }, [hasConfiguredUsageService, loadUsageServiceStatus, usageServiceBase]);
 
   useEffect(() => {
     if (requestLogModalOpen && !requestLogTouched) {
@@ -672,97 +616,81 @@ export function SystemPage() {
           )}
         </Card>
 
-        <Card
-          title={t('usage_service.title', { defaultValue: '外部用量统计服务' })}
-          extra={
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void loadUsageServiceStatus()}
-              loading={usageServiceChecking}
-              disabled={!usageServiceDraftBase.trim()}
-            >
-              {t('usage_service.check_status', { defaultValue: '检查状态' })}
-            </Button>
-          }
-        >
-          <p className={styles.sectionDescription}>
-            {t('usage_service.description', {
-              defaultValue:
-                '当面板由 CPA 自动载入时，可配置独立部署的 Usage Service 读取 SQLite 持久化用量；Docker 内置模式通常不需要配置这里。',
-            })}
-          </p>
-          <div className={styles.usageServiceForm}>
-            <ToggleSwitch
-              label={t('usage_service.enable', { defaultValue: '启用外部 Usage Service' })}
-              labelPosition="left"
-              checked={usageServiceDraftEnabled}
-              onChange={setUsageServiceDraftEnabled}
-            />
-            <Input
-              label={t('usage_service.url_label', { defaultValue: 'Usage Service 地址' })}
-              placeholder={t('usage_service.url_placeholder', {
-                defaultValue: '例如 http://127.0.0.1:18317',
-              })}
-              value={usageServiceDraftBase}
-              onChange={(event) => setUsageServiceDraftBase(event.target.value)}
-              disabled={!usageServiceDraftEnabled}
-            />
-            {usageServiceStatus ? (
-              <div className={styles.usageServiceStatusGrid}>
-                <div>
-                  <span>{t('usage_service.collector', { defaultValue: '采集器' })}</span>
-                  <strong>{usageServiceStatus.collector?.collector || '-'}</strong>
-                </div>
-                <div>
-                  <span>{t('usage_service.mode', { defaultValue: '采集模式' })}</span>
-                  <strong>{usageServiceStatus.collector?.mode || '-'}</strong>
-                </div>
-                <div>
-                  <span>{t('usage_service.transport', { defaultValue: '传输协议' })}</span>
-                  <strong>{usageServiceStatus.collector?.transport || '-'}</strong>
-                </div>
-                <div>
-                  <span>{t('usage_service.queue', { defaultValue: '队列' })}</span>
-                  <strong>
-                    {usageServiceStatus.collector?.queue || '-'}
-                  </strong>
-                </div>
-                <div>
-                  <span>{t('usage_service.events', { defaultValue: '事件数' })}</span>
-                  <strong>{usageServiceStatus.events ?? '-'}</strong>
-                </div>
-                <div>
-                  <span>{t('usage_service.last_consumed', { defaultValue: '最后消费' })}</span>
-                  <strong>
-                    {usageServiceStatus.collector?.lastConsumedAt
-                      ? new Date(usageServiceStatus.collector.lastConsumedAt).toLocaleString(i18n.language)
-                      : '-'}
-                  </strong>
-                </div>
-                <div>
-                  <span>{t('usage_service.last_error', { defaultValue: '最后错误' })}</span>
-                  <strong>{usageServiceStatus.collector?.lastError || '-'}</strong>
-                </div>
-              </div>
-            ) : null}
-            <div className={styles.usageServiceActions}>
+        {hasConfiguredUsageService ? (
+          <Card
+            title={t('usage_service.title', { defaultValue: '外部用量统计服务' })}
+            extra={
               <Button
                 variant="secondary"
-                onClick={() => {
-                  setUsageServiceDraftEnabled(usageServiceEnabled);
-                  setUsageServiceDraftBase(usageServiceBase);
-                }}
-                disabled={usageServiceSaving}
+                size="sm"
+                onClick={() => void loadUsageServiceStatus()}
+                loading={usageServiceChecking}
               >
-                {t('common.reset', { defaultValue: '重置' })}
+                {t('usage_service.check_status', { defaultValue: '检查状态' })}
               </Button>
-              <Button onClick={() => void handleUsageServiceSave()} loading={usageServiceSaving}>
-                {t('usage_service.save_and_connect', { defaultValue: '保存并连接' })}
-              </Button>
+            }
+          >
+            <p className={styles.sectionDescription}>
+              {t('usage_service.description', {
+                defaultValue:
+                  '当面板由 CPA 自动载入时，可配置独立部署的 Usage Service 读取 SQLite 持久化用量；Docker 内置模式通常不需要配置这里。',
+              })}
+            </p>
+            <div className={styles.usageServiceStatusGrid}>
+              <div>
+                <span>{t('usage_service.url_label', { defaultValue: 'Usage Service 地址' })}</span>
+                <strong>{usageServiceBase}</strong>
+              </div>
+              {usageServiceStatus ? (
+                <>
+                  <div>
+                    <span>{t('usage_service.collector', { defaultValue: '采集器' })}</span>
+                    <strong>{usageServiceStatus.collector?.collector || '-'}</strong>
+                  </div>
+                  <div>
+                    <span>{t('usage_service.mode', { defaultValue: '采集模式' })}</span>
+                    <strong>{usageServiceStatus.collector?.mode || '-'}</strong>
+                  </div>
+                  <div>
+                    <span>{t('usage_service.transport', { defaultValue: '传输协议' })}</span>
+                    <strong>{usageServiceStatus.collector?.transport || '-'}</strong>
+                  </div>
+                  <div>
+                    <span>{t('usage_service.queue', { defaultValue: '队列' })}</span>
+                    <strong>{usageServiceStatus.collector?.queue || '-'}</strong>
+                  </div>
+                  <div>
+                    <span>{t('usage_service.events', { defaultValue: '事件数' })}</span>
+                    <strong>{usageServiceStatus.events ?? '-'}</strong>
+                  </div>
+                  <div>
+                    <span>{t('usage_service.last_consumed', { defaultValue: '最后消费' })}</span>
+                    <strong>
+                      {usageServiceStatus.collector?.lastConsumedAt
+                        ? new Date(usageServiceStatus.collector.lastConsumedAt).toLocaleString(
+                            i18n.language
+                          )
+                        : '-'}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>{t('usage_service.last_error', { defaultValue: '最后错误' })}</span>
+                    <strong>{usageServiceStatus.collector?.lastError || '-'}</strong>
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <span>{t('usage_service.status_label', { defaultValue: '状态' })}</span>
+                  <strong>
+                    {usageServiceChecking
+                      ? t('common.loading')
+                      : t('usage_service.configured', { defaultValue: '已配置' })}
+                  </strong>
+                </div>
+              )}
             </div>
-          </div>
-        </Card>
+          </Card>
+        ) : null}
 
         <Card title={t('system_info.clear_login_title')}>
           <p className={styles.sectionDescription}>{t('system_info.clear_login_desc')}</p>

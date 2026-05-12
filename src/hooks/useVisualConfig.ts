@@ -606,6 +606,12 @@ function getNextDirtyFields(
   if (Object.prototype.hasOwnProperty.call(patch, 'rmPanelRepo')) {
     updateDirty('rmPanelRepo', nextValues.rmPanelRepo === baselineValues.rmPanelRepo);
   }
+  if (Object.prototype.hasOwnProperty.call(patch, 'usageServiceBase')) {
+    updateDirty(
+      'usageServiceBase',
+      nextValues.usageServiceBase === baselineValues.usageServiceBase
+    );
+  }
   if (Object.prototype.hasOwnProperty.call(patch, 'authDir')) {
     updateDirty('authDir', nextValues.authDir === baselineValues.authDir);
   }
@@ -833,6 +839,11 @@ export function useVisualConfig() {
       const parsed = asRecord(parsedRaw) ?? {};
       const tls = asRecord(parsed.tls);
       const remoteManagement = asRecord(parsed['remote-management']);
+      const externalUsageService =
+        asRecord(parsed['external-usage-service']) ??
+        asRecord(parsed.externalUsageService) ??
+        asRecord(parsed['usage-service']) ??
+        asRecord(parsed.usageService);
       const quotaExceeded = asRecord(parsed['quota-exceeded']);
       const routing = asRecord(parsed.routing);
       const payload = asRecord(parsed.payload);
@@ -858,6 +869,16 @@ export function useVisualConfig() {
             : typeof remoteManagement?.['panel-repo'] === 'string'
               ? remoteManagement['panel-repo']
               : '',
+        usageServiceBase:
+          typeof externalUsageService?.['base-url'] === 'string'
+            ? externalUsageService['base-url']
+            : typeof externalUsageService?.baseUrl === 'string'
+              ? externalUsageService.baseUrl
+              : typeof externalUsageService?.url === 'string'
+                ? externalUsageService.url
+                : typeof externalUsageService?.serviceBase === 'string'
+                  ? externalUsageService.serviceBase
+                  : '',
 
         authDir: typeof parsed['auth-dir'] === 'string' ? parsed['auth-dir'] : '',
         apiKeysText: resolveApiKeysText(parsed),
@@ -969,6 +990,26 @@ export function useVisualConfig() {
             doc.deleteIn(['remote-management', 'panel-repo']);
           }
           deleteIfMapEmpty(doc, ['remote-management']);
+        }
+
+        if (
+          docHas(doc, ['external-usage-service']) ||
+          values.usageServiceBase.trim() ||
+          dirtyFields.has('usageServiceBase')
+        ) {
+          if (values.usageServiceBase.trim()) {
+            ensureMapInDoc(doc, ['external-usage-service']);
+            setStringInDoc(doc, ['external-usage-service', 'base-url'], values.usageServiceBase);
+            if (docHas(doc, ['external-usage-service', 'enabled'])) {
+              doc.deleteIn(['external-usage-service', 'enabled']);
+            }
+          } else if (docHas(doc, ['external-usage-service'])) {
+            doc.deleteIn(['external-usage-service', 'base-url']);
+            if (docHas(doc, ['external-usage-service', 'enabled'])) {
+              doc.deleteIn(['external-usage-service', 'enabled']);
+            }
+            deleteIfMapEmpty(doc, ['external-usage-service']);
+          }
         }
 
         setStringInDoc(doc, ['auth-dir'], values.authDir);

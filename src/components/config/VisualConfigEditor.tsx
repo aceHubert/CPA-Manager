@@ -48,6 +48,7 @@ type VisualSectionId =
   | 'server'
   | 'tls'
   | 'remote'
+  | 'usageService'
   | 'auth'
   | 'system'
   | 'network'
@@ -279,6 +280,13 @@ export function VisualConfigEditor({
         title: t('config_management.visual.sections.remote.title'),
         description: t('config_management.visual.sections.remote.description'),
         icon: IconSatellite,
+        errorCount: 0,
+      },
+      {
+        id: 'usageService',
+        title: t('config_management.visual.sections.usage_service.title'),
+        description: t('config_management.visual.sections.usage_service.description'),
+        icon: IconTrendingUp,
         errorCount: 0,
       },
       {
@@ -675,6 +683,27 @@ export function VisualConfigEditor({
                   disabled={disabled}
                 />
               </SectionGrid>
+            </SectionStack>
+          </ConfigSection>
+
+          <ConfigSection
+            id="usageService"
+            ref={(node) => {
+              sectionRefs.current.usageService = node;
+            }}
+            icon={<IconTrendingUp size={16} />}
+            title={t('config_management.visual.sections.usage_service.title')}
+            description={t('config_management.visual.sections.usage_service.description')}
+          >
+            <SectionStack>
+              <Input
+                label={t('config_management.visual.sections.usage_service.url')}
+                placeholder="http://127.0.0.1:18317"
+                value={values.usageServiceBase}
+                onChange={(e) => onChange({ usageServiceBase: e.target.value })}
+                disabled={disabled}
+                hint={t('config_management.visual.sections.usage_service.url_hint')}
+              />
             </SectionStack>
           </ConfigSection>
 

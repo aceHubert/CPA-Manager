@@ -25,6 +25,11 @@ export interface AuthPoolCleanConfig {
   sampleSize?: number;
 }
 
+export interface ExternalUsageServiceConfig {
+  serviceBase: string;
+  configured: boolean;
+}
+
 export interface Config {
   debug?: boolean;
   proxyUrl?: string;
@@ -47,6 +52,7 @@ export interface Config {
   vertexApiKeys?: ProviderKeyConfig[];
   openaiCompatibility?: OpenAIProviderConfig[];
   oauthExcludedModels?: Record<string, string[]>;
+  externalUsageService?: ExternalUsageServiceConfig;
   raw?: Record<string, unknown>;
 }
 
@@ -70,7 +76,8 @@ export type RawConfigSection =
   | 'claude-api-key'
   | 'vertex-api-key'
   | 'openai-compatibility'
-  | 'oauth-excluded-models';
+  | 'oauth-excluded-models'
+  | 'external-usage-service';
 
 export interface ConfigCache {
   data: Config;

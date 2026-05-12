@@ -32,7 +32,7 @@ Since v6.10.0, CPA no longer includes built-in usage statistics. This project no
 | Mode | Entry URL | What the user configures | Best for |
 |---|---|---|---|
 | Full Docker mode | `http://<host>:18317/management.html` | CPA URL + Management Key on login | New deployments, one entry point, least browser/CORS complexity |
-| CPA panel mode | `http://<cpa-host>:8317/management.html` | Usage Service URL under **Management Center Info -> External Usage Service** | Existing CPA automatic panel loading |
+| CPA panel mode | `http://<cpa-host>:8317/management.html` | Usage Service URL in **Configuration -> Server Configuration** | Existing CPA automatic panel loading |
 | Frontend only | Vite dev server or `dist/index.html` | CPA URL, optionally Usage Service URL | Development |
 
 Full Docker mode does not bundle CPA itself. CPA still runs as the upstream service; the Docker image provides the Usage Service plus an embedded copy of this management panel.
@@ -77,7 +77,7 @@ Usage Service
   -> SQLite /data/usage.sqlite
 ```
 
-Use this when CPA still auto-downloads and serves the panel. Deploy Usage Service separately, then open **Management Center Info -> External Usage Service**, enable it, enter the Usage Service URL, and save.
+Use this when CPA still auto-downloads and serves the panel. Deploy Usage Service separately, then enter the Usage Service URL in **Configuration -> Server Configuration**. A non-empty URL enables the external Usage Service.
 
 ## Quick Start: Full Docker Mode
 
@@ -209,16 +209,16 @@ Then enter `http://host.docker.internal:8317` as the CPA URL.
 3. In the CPA panel, go to:
 
    ```text
-   Management Center Info -> External Usage Service
+   Configuration -> Server Configuration -> Usage Service URL
    ```
 
-4. Enable it and enter:
+4. Enter:
 
    ```text
    http://<usage-service-host>:18317
    ```
 
-5. Click **Save and connect**.
+5. Save the configuration.
 
 The panel sends the current CPA URL and Management Key to Usage Service. After that, monitoring reads usage data from Usage Service while other management calls continue to use CPA.
 
@@ -304,7 +304,7 @@ Usage import accepts two file families: JSONL/NDJSON event files exported by Usa
 - **Request Monitoring**: persisted usage KPIs, model/channel/account breakdowns, model pricing, estimated token cost, failure analysis, realtime tables
 - **Codex Account Inspection**: batch probing and cleanup suggestions for Codex auth pools
 - **Logs**: incremental file log reading and filtering
-- **Management Center Info**: model list, version checks, local state tools, external Usage Service configuration
+- **Management Center Info**: model list, version checks, local state tools, external Usage Service status
 
 ## Development
 

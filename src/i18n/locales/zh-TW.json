@@ -995,7 +995,7 @@
     "import_confirm_title": "匯入使用統計",
     "import_confirm_body": "將把 {{name}} 寫入 Usage Service 的 SQLite 用量庫，重複事件會自動跳過。",
     "import_legacy_warning": "舊版匯出檔缺少部分請求中繼資料，帳號匹配與明細精度可能低於新採集資料。",
-    "import_export_requires_usage_service": "匯入匯出需要連接 Usage Service，請從 Docker 面板訪問或在系統頁設定 Usage Service 地址。",
+    "import_export_requires_usage_service": "匯入匯出需要連接 Usage Service，請從 Docker 面板訪問或在設定管理的伺服器設定中填寫 Usage Service 位址。",
     "chart_line_label_1": "曲線 1",
     "chart_line_label_2": "曲線 2",
     "chart_line_label_3": "曲線 3",
@@ -1036,7 +1036,7 @@
     "model_price_sync_success": "已從 {{source}} 同步 {{count}} 筆模型定價",
     "model_price_sync_failed": "模型定價同步失敗",
     "model_price_sync_no_models": "目前沒有可同步的模型",
-    "model_price_sync_requires_usage_service": "定價同步需要連接 Usage Service，請從 Docker 面板存取或在系統頁設定 Usage Service 位址。",
+    "model_price_sync_requires_usage_service": "定價同步需要連接 Usage Service，請從 Docker 面板存取或在設定管理的伺服器設定中填寫 Usage Service 位址。",
     "model_price_model_required": "請選擇要設定定價的模型",
     "cost_trend": "花費統計",
     "cost_axis_label": "花費（$）",
@@ -1573,6 +1573,12 @@
           "secret_key_placeholder": "設定管理金鑰",
           "panel_repo": "面板儲存庫"
         },
+        "usage_service": {
+          "title": "外部用量統計服務",
+          "description": "設定獨立部署的 Usage Service 位址，供監控、定價與匯入匯出功能使用",
+          "url": "Usage Service 位址",
+          "url_hint": "填寫後即啟用外部用量統計服務，留空則不使用外部服務。"
+        },
         "auth": {
           "title": "驗證設定",
           "description": "API 金鑰與驗證檔案目錄設定",
@@ -1742,6 +1748,8 @@
     "url_required": "請先填寫 Usage Service 位址",
     "check_status": "檢查狀態",
     "save_and_connect": "儲存並連線",
+    "configured": "已設定",
+    "status_label": "狀態",
     "saved": "Usage Service 已連線並儲存",
     "save_failed": "Usage Service 儲存失敗",
     "status_failed": "Usage Service 狀態檢查失敗",

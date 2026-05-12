@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { SelectionCheckbox } from '@/components/ui/SelectionCheckbox';
 import { IconEye, IconEyeOff } from '@/components/ui/icons';
-import { useAuthStore, useLanguageStore, useNotificationStore, useUsageServiceStore } from '@/stores';
+import { useAuthStore, useLanguageStore, useNotificationStore } from '@/stores';
 import {
   LEGACY_USAGE_SERVICE_LAST_CPA_BASE_KEY,
   USAGE_SERVICE_LAST_CPA_BASE_KEY,
@@ -85,7 +85,6 @@ export function LoginPage() {
   const storedBase = useAuthStore((state) => state.apiBase);
   const storedKey = useAuthStore((state) => state.managementKey);
   const storedRememberPassword = useAuthStore((state) => state.rememberPassword);
-  const setUsageServiceConfig = useUsageServiceStore((state) => state.setUsageServiceConfig);
 
   const [apiBase, setApiBase] = useState('');
   const [managementKey, setManagementKey] = useState('');
@@ -130,9 +129,6 @@ export function LoginPage() {
         }
 
         const autoLoggedIn = await restoreSession();
-        if (detectedUsageService) {
-          setUsageServiceConfig({ enabled: true, serviceBase: detectedBase });
-        }
         if (autoLoggedIn) {
           setAutoLoginSuccess(true);
           // 延迟跳转，让用户看到成功动画
@@ -187,7 +183,6 @@ export function LoginPage() {
           cpaBaseUrl: baseToUse,
           managementKey: managementKey.trim(),
         });
-        setUsageServiceConfig({ enabled: true, serviceBase: detectedBase });
         localStorage.setItem(USAGE_SERVICE_LAST_CPA_BASE_KEY, baseToUse);
       }
       await login({
@@ -212,7 +207,6 @@ export function LoginPage() {
     navigate,
     rememberPassword,
     showNotification,
-    setUsageServiceConfig,
     t,
     usageServiceMode,
   ]);

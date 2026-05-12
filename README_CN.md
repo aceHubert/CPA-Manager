@@ -32,7 +32,7 @@ CPA 自 v6.10.0 起不再内置用量统计。当前方案通过常驻 Usage Ser
 | 模式 | 入口地址 | 用户需要配置 | 适用场景 |
 |---|---|---|---|
 | 完整 Docker 方案 | `http://<host>:18317/management.html` | 登录时填写 CPA 地址 + Management Key | 新部署、单入口、最少浏览器/CORS 问题 |
-| CPA 控制面板方案 | `http://<cpa-host>:8317/management.html` | 在「中心信息 -> 外部用量统计服务」配置 Usage Service 地址 | 保留 CPA 自动载入面板的现有习惯 |
+| CPA 控制面板方案 | `http://<cpa-host>:8317/management.html` | 在「配置管理 -> 服务器配置」配置 Usage Service 地址 | 保留 CPA 自动载入面板的现有习惯 |
 | 前端开发方案 | Vite dev server 或 `dist/index.html` | CPA 地址，可选 Usage Service 地址 | 本地开发 |
 
 完整 Docker 方案不内置 CPA 本体。CPA 仍然作为上游服务独立运行；Docker 镜像提供 Usage Service 和内置管理面板。
@@ -77,7 +77,7 @@ Usage Service
   -> SQLite /data/usage.sqlite
 ```
 
-当你希望保留 CPA 自动下载并托管面板的机制时，使用这个方案。单独部署 Usage Service，然后在「中心信息 -> 外部用量统计服务」中启用并填写地址。
+当你希望保留 CPA 自动下载并托管面板的机制时，使用这个方案。单独部署 Usage Service，然后在「配置管理 -> 服务器配置」填写地址；地址非空即启用外部 Usage Service。
 
 ## 快速开始：完整 Docker 方案
 
@@ -209,16 +209,16 @@ docker run -d \
 3. 在 CPA 面板进入：
 
    ```text
-   中心信息 -> 外部用量统计服务
+   配置管理 -> 服务器配置 -> Usage Service 地址
    ```
 
-4. 启用并填写：
+4. 填写：
 
    ```text
    http://<usage-service-host>:18317
    ```
 
-5. 点击「保存并连接」。
+5. 保存配置。
 
 面板会把当前 CPA 地址和 Management Key 发送给 Usage Service。之后监控页从 Usage Service 读取用量数据，其他管理功能仍然访问 CPA。
 
@@ -304,7 +304,7 @@ setup 后，`/status`、用量、模型价格和 `/v0/management/*` 反代接口
 - **请求监控**：持久化用量 KPI、模型/渠道/账号拆解、模型价格、Token 费用估算、失败分析、实时表格
 - **Codex 账号巡检**：批量探测 Codex 认证池并给出清理建议
 - **日志**：增量读取和筛选文件日志
-- **中心信息**：模型列表、版本检查、本地状态工具、外部 Usage Service 配置
+- **中心信息**：模型列表、版本检查、本地状态工具、外部 Usage Service 状态
 
 ## 开发命令
 

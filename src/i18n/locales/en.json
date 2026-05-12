@@ -975,7 +975,7 @@
     "import_confirm_title": "Import Usage Data",
     "import_confirm_body": "{{name}} will be written into the Usage Service SQLite usage database. Duplicate events will be skipped automatically.",
     "import_legacy_warning": "Legacy export files are missing some request metadata, so account matching and detail accuracy may be lower than newly collected data.",
-    "import_export_requires_usage_service": "Import and export require Usage Service. Open the Docker-hosted panel or configure a Usage Service URL on the System page.",
+    "import_export_requires_usage_service": "Import and export require Usage Service. Open the Docker-hosted panel or enter a Usage Service URL in Configuration > Server Configuration.",
     "chart_line_label_1": "Line 1",
     "chart_line_label_2": "Line 2",
     "chart_line_label_3": "Line 3",
@@ -1016,7 +1016,7 @@
     "model_price_sync_success": "Synced {{count}} model prices from {{source}}",
     "model_price_sync_failed": "Failed to sync model prices",
     "model_price_sync_no_models": "No models available to sync",
-    "model_price_sync_requires_usage_service": "Price sync requires Usage Service. Open the Docker-hosted panel or configure a Usage Service URL on the System page.",
+    "model_price_sync_requires_usage_service": "Price sync requires Usage Service. Open the Docker-hosted panel or enter a Usage Service URL in Configuration > Server Configuration.",
     "model_price_model_required": "Please choose a model to set pricing",
     "cost_trend": "Cost Overview",
     "cost_axis_label": "Cost ($)",
@@ -1553,6 +1553,12 @@
           "secret_key_placeholder": "Set management key",
           "panel_repo": "Panel Repository"
         },
+        "usage_service": {
+          "title": "External Usage Service",
+          "description": "Configure a separately deployed Usage Service for monitoring, pricing, import, and export features",
+          "url": "Usage Service URL",
+          "url_hint": "A non-empty URL enables the external usage service. Leave empty to use no external service."
+        },
         "auth": {
           "title": "Authentication Configuration",
           "description": "API keys and authentication directory settings",
@@ -1722,6 +1728,8 @@
     "url_required": "Enter the Usage Service URL first",
     "check_status": "Check status",
     "save_and_connect": "Save and connect",
+    "configured": "Configured",
+    "status_label": "Status",
     "saved": "Usage Service connected and saved",
     "save_failed": "Failed to save Usage Service",
     "status_failed": "Failed to check Usage Service status",

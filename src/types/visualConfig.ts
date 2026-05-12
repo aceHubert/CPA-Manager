@@ -65,6 +65,7 @@ export type VisualConfigValues = {
   rmSecretKey: string;
   rmDisableControlPanel: boolean;
   rmPanelRepo: string;
+  usageServiceBase: string;
   authDir: string;
   apiKeysText: string;
   debug: boolean;
@@ -108,6 +109,7 @@ export const DEFAULT_VISUAL_VALUES: VisualConfigValues = {
   rmSecretKey: '',
   rmDisableControlPanel: false,
   rmPanelRepo: '',
+  usageServiceBase: '',
   authDir: '',
   apiKeysText: '',
   debug: false,

@@ -966,7 +966,7 @@
     "import_confirm_title": "Импорт данных использования",
     "import_confirm_body": "{{name}} будет записан в базу SQLite Usage Service. Дублирующиеся события будут пропущены автоматически.",
     "import_legacy_warning": "В старых файлах экспорта отсутствует часть метаданных запросов, поэтому сопоставление аккаунтов и точность деталей могут быть ниже, чем у новых данных.",
-    "import_export_requires_usage_service": "Для импорта и экспорта нужен Usage Service. Откройте Docker-панель или укажите URL Usage Service на странице системы.",
+    "import_export_requires_usage_service": "Для импорта и экспорта нужен Usage Service. Откройте Docker-панель или укажите URL Usage Service в разделе Configuration > Server Configuration.",
     "chart_line_label_1": "Линия 1",
     "chart_line_label_2": "Линия 2",
     "chart_line_label_3": "Линия 3",
@@ -1007,7 +1007,7 @@
     "model_price_sync_success": "Синхронизировано {{count}} цен моделей из {{source}}",
     "model_price_sync_failed": "Не удалось синхронизировать цены моделей",
     "model_price_sync_no_models": "Нет моделей для синхронизации",
-    "model_price_sync_requires_usage_service": "Для синхронизации цен нужен Usage Service. Откройте Docker-панель или укажите URL Usage Service на странице системы.",
+    "model_price_sync_requires_usage_service": "Для синхронизации цен нужен Usage Service. Откройте Docker-панель или укажите URL Usage Service в разделе Configuration > Server Configuration.",
     "model_price_model_required": "Выберите модель для задания цены",
     "cost_trend": "Обзор стоимости",
     "cost_axis_label": "Стоимость ($)",
@@ -1544,6 +1544,12 @@
           "secret_key_placeholder": "Задайте ключ управления",
           "panel_repo": "Репозиторий панели"
         },
+        "usage_service": {
+          "title": "Внешний сервис статистики",
+          "description": "Настройте адрес отдельного Usage Service для мониторинга, цен, импорта и экспорта",
+          "url": "Адрес Usage Service",
+          "url_hint": "Непустой адрес включает внешний сервис статистики. Оставьте пустым, чтобы не использовать внешний сервис."
+        },
         "auth": {
           "title": "Настройки аутентификации",
           "description": "API-ключи и каталог аутентификации",
@@ -1713,6 +1719,8 @@
     "url_required": "Сначала укажите адрес Usage Service",
     "check_status": "Проверить статус",
     "save_and_connect": "Сохранить и подключить",
+    "configured": "Настроено",
+    "status_label": "Статус",
     "saved": "Usage Service подключён и сохранён",
     "save_failed": "Не удалось сохранить Usage Service",
     "status_failed": "Не удалось проверить статус Usage Service",
