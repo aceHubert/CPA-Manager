@@ -139,6 +139,7 @@ const REALTIME_SUCCESS_BLOCK_ROWS = 5;
 const REALTIME_SUCCESS_BLOCK_SIZE = 12;
 const REALTIME_SUCCESS_BLOCK_GAP = 4;
 const REALTIME_SUCCESS_DEFAULT_COLUMNS = 50;
+const REALTIME_SUCCESS_PANEL_INLINE_PADDING = 44;
 const MAX_USAGE_IMPORT_FILE_SIZE = 64 * 1024 * 1024;
 const EMPTY_STATUS_BAR_DATA: StatusBarData = {
   blocks: [],
@@ -167,22 +168,40 @@ const parseDateTimeLocalValue = (value: string) => {
   return Number.isFinite(timestamp) ? timestamp : null;
 };
 
-const calculateRealtimeSuccessColumns = (width: number) => {
-  const contentWidth = Math.max(0, width - 24);
-  return Math.max(
+type RealtimeSuccessGridLayout = {
+  columns: number;
+  blockSize: number;
+};
+
+const calculateRealtimeSuccessLayout = (
+  width: number,
+  inlinePadding = REALTIME_SUCCESS_PANEL_INLINE_PADDING
+): RealtimeSuccessGridLayout => {
+  const contentWidth = Math.max(REALTIME_SUCCESS_BLOCK_SIZE, width - inlinePadding);
+  const columns = Math.max(
     1,
     Math.floor(
       (contentWidth + REALTIME_SUCCESS_BLOCK_GAP) /
         (REALTIME_SUCCESS_BLOCK_SIZE + REALTIME_SUCCESS_BLOCK_GAP)
     )
   );
+  const blockSize =
+    (contentWidth - Math.max(0, columns - 1) * REALTIME_SUCCESS_BLOCK_GAP) / columns;
+
+  return {
+    columns,
+    blockSize: Math.max(REALTIME_SUCCESS_BLOCK_SIZE, blockSize),
+  };
 };
 
-const getDefaultRealtimeSuccessColumns = () => {
+const getDefaultRealtimeSuccessLayout = () => {
   if (typeof window === 'undefined') {
-    return REALTIME_SUCCESS_DEFAULT_COLUMNS;
+    return {
+      columns: REALTIME_SUCCESS_DEFAULT_COLUMNS,
+      blockSize: REALTIME_SUCCESS_BLOCK_SIZE,
+    };
   }
-  return calculateRealtimeSuccessColumns(window.innerWidth);
+  return calculateRealtimeSuccessLayout(window.innerWidth);
 };
 
 type StatusFilter = 'all' | 'success' | 'failed';
@@ -2012,8 +2031,8 @@ export function MonitoringCenterPage() {
   const accountQuotaRequestIdsRef = useRef<Record<string, number>>({});
   const usageImportInputRef = useRef<HTMLInputElement | null>(null);
   const realtimeSuccessSectionRef = useRef<HTMLElement | null>(null);
-  const [realtimeSuccessColumns, setRealtimeSuccessColumns] = useState(
-    getDefaultRealtimeSuccessColumns
+  const [realtimeSuccessGridLayout, setRealtimeSuccessGridLayout] = useState(
+    getDefaultRealtimeSuccessLayout
   );
   const deferredSearch = useDeferredValue(searchInput);
   const accountPage =
@@ -2136,38 +2155,44 @@ export function MonitoringCenterPage() {
     if (!element) return;
     let animationFrameId: number | null = null;
 
-    const updateColumns = () => {
-      const nextColumns = calculateRealtimeSuccessColumns(element.clientWidth);
-      setRealtimeSuccessColumns((previous) =>
-        previous === nextColumns ? previous : nextColumns
+    const updateLayout = () => {
+      const elementStyle = window.getComputedStyle(element);
+      const inlinePadding =
+        Number.parseFloat(elementStyle.paddingLeft) + Number.parseFloat(elementStyle.paddingRight);
+      const nextLayout = calculateRealtimeSuccessLayout(element.clientWidth, inlinePadding);
+      setRealtimeSuccessGridLayout((previous) =>
+        previous.columns === nextLayout.columns &&
+        Math.abs(previous.blockSize - nextLayout.blockSize) < 0.01
+          ? previous
+          : nextLayout
       );
     };
-    const scheduleUpdateColumns = () => {
+    const scheduleUpdateLayout = () => {
       if (animationFrameId !== null) {
         window.cancelAnimationFrame(animationFrameId);
       }
       animationFrameId = window.requestAnimationFrame(() => {
         animationFrameId = null;
-        updateColumns();
+        updateLayout();
       });
     };
 
-    updateColumns();
-    window.addEventListener('resize', scheduleUpdateColumns);
+    updateLayout();
+    window.addEventListener('resize', scheduleUpdateLayout);
     if (typeof ResizeObserver === 'undefined') {
       return () => {
-        window.removeEventListener('resize', scheduleUpdateColumns);
+        window.removeEventListener('resize', scheduleUpdateLayout);
         if (animationFrameId !== null) {
           window.cancelAnimationFrame(animationFrameId);
         }
       };
     }
 
-    const resizeObserver = new ResizeObserver(scheduleUpdateColumns);
+    const resizeObserver = new ResizeObserver(scheduleUpdateLayout);
     resizeObserver.observe(element);
     return () => {
       resizeObserver.disconnect();
-      window.removeEventListener('resize', scheduleUpdateColumns);
+      window.removeEventListener('resize', scheduleUpdateLayout);
       if (animationFrameId !== null) {
         window.cancelAnimationFrame(animationFrameId);
       }
@@ -2177,9 +2202,10 @@ export function MonitoringCenterPage() {
   const realtimeSuccessGridStyle = useMemo(
     () =>
       ({
-        '--realtime-success-columns': realtimeSuccessColumns,
+        '--realtime-success-columns': realtimeSuccessGridLayout.columns,
+        '--realtime-success-block-size': `${realtimeSuccessGridLayout.blockSize}px`,
       }) as CSSProperties,
-    [realtimeSuccessColumns]
+    [realtimeSuccessGridLayout]
   );
 
   useEffect(() => {
@@ -2318,7 +2344,8 @@ export function MonitoringCenterPage() {
       focusedAccount ? allRows.filter((row) => row.account === focusedAccount) : allRows,
     [allRows, focusedAccount]
   );
-  const realtimeSuccessBlockCount = realtimeSuccessColumns * REALTIME_SUCCESS_BLOCK_ROWS;
+  const realtimeSuccessBlockCount =
+    realtimeSuccessGridLayout.columns * REALTIME_SUCCESS_BLOCK_ROWS;
   const accountStatusNowMs = lastRefreshedAt?.getTime() ?? Date.now();
   const realtimeSuccessStatusData = useMemo(
     () => buildRealtimeSuccessStatusData(realtimeSuccessRows, realtimeSuccessBlockCount),

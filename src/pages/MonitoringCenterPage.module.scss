@@ -840,10 +840,13 @@
 
 .realtimeSuccessSection .monitoringStatusBlocks {
   display: grid;
-  grid-template-rows: repeat(5, 12px);
+  grid-template-rows: repeat(5, var(--realtime-success-block-size, 12px));
   grid-auto-flow: column;
-  grid-template-columns: repeat(var(--realtime-success-columns, 50), 12px);
-  grid-auto-columns: 12px;
+  grid-template-columns: repeat(
+    var(--realtime-success-columns, 50),
+    var(--realtime-success-block-size, 12px)
+  );
+  grid-auto-columns: var(--realtime-success-block-size, 12px);
   gap: 4px;
   justify-content: end;
   padding-bottom: 2px;
@@ -2224,6 +2227,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  overflow: hidden;
 }
 
 .monitoringStatusBlocks {
