@@ -1396,6 +1396,7 @@
     "request_type": "請求類型",
     "request_status": "請求狀態",
     "recent_status": "最近狀態",
+    "realtime_health_status_title": "即時健康狀態",
     "latest_request_time": "最近請求時間",
     "column_time": "時間",
     "focus_account": "聚焦帳號",

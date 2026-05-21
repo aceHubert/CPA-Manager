@@ -1376,6 +1376,7 @@
     "request_type": "请求类型",
     "request_status": "请求状态",
     "recent_status": "最近状态",
+    "realtime_health_status_title": "实时健康状态",
     "latest_request_time": "最近请求时间",
     "column_time": "时间",
     "focus_account": "聚焦账号",

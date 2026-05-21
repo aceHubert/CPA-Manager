@@ -834,6 +834,44 @@
   max-width: 100%;
 }
 
+.realtimeSuccessSection {
+  max-width: 100%;
+}
+
+.realtimeSuccessSection .monitoringStatusBlocks {
+  display: grid;
+  grid-template-rows: repeat(5, 12px);
+  grid-auto-flow: column;
+  grid-template-columns: repeat(var(--realtime-success-columns, 50), 12px);
+  grid-auto-columns: 12px;
+  gap: 4px;
+  justify-content: end;
+  padding-bottom: 2px;
+}
+
+.realtimeSuccessSection .monitoringStatusBlockWrapper {
+  min-width: 0;
+}
+
+.realtimeSuccessSection .monitoringStatusBlockButton {
+  aspect-ratio: 1;
+  height: auto;
+  padding: 0;
+  border-radius: 2px;
+}
+
+.realtimeSuccessSection .monitoringStatusBlock {
+  height: 100%;
+  aspect-ratio: 1;
+  border-radius: 2px;
+}
+
+.realtimeSuccessSection .monitoringStatusBlockActive .monitoringStatusBlock,
+.realtimeSuccessSection .monitoringStatusBlockButton:hover .monitoringStatusBlock,
+.realtimeSuccessSection .monitoringStatusBlockButton:focus-visible .monitoringStatusBlock {
+  transform: none;
+}
+
 .inlineMetrics span {
   display: inline-flex;
   align-items: center;

@@ -1367,6 +1367,7 @@
     "request_type": "Тип запроса",
     "request_status": "Статус запроса",
     "recent_status": "Последний статус",
+    "realtime_health_status_title": "Состояние в реальном времени",
     "latest_request_time": "Последний запрос",
     "column_time": "Время",
     "focus_account": "Фокус на аккаунте",

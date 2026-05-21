@@ -1376,6 +1376,7 @@
     "request_type": "Request Type",
     "request_status": "Request Status",
     "recent_status": "Recent Status",
+    "realtime_health_status_title": "Realtime Health Status",
     "latest_request_time": "Latest Request",
     "column_time": "Time",
     "focus_account": "Focus Account",

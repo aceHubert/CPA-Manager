@@ -4,9 +4,11 @@ import {
   useDeferredValue,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ChangeEvent,
   type ReactNode,
 } from 'react';
@@ -85,7 +87,7 @@ import { useUsageData } from '@/features/monitoring/hooks/useUsageData';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useInterval } from '@/hooks/useInterval';
 import { apiCallApi, authFilesApi, getApiCallErrorMessage } from '@/services/api';
-import { useAuthStore, useConfigStore, useNotificationStore } from '@/stores';
+import { useAuthStore, useConfigStore, useMonitoringStore, useNotificationStore } from '@/stores';
 import type {
   AuthFileItem,
   CodexRateLimitInfo,
@@ -93,7 +95,7 @@ import type {
   CodexUsageWindow,
 } from '@/types';
 import { formatFileSize, maskSensitiveText } from '@/utils/format';
-import type { StatusBarData, StatusBlockDetail } from '@/utils/recentRequests';
+import type { StatusBarData, StatusBlockDetail, StatusBlockState } from '@/utils/recentRequests';
 import {
   CODEX_REQUEST_HEADERS,
   CODEX_USAGE_URL,
@@ -133,6 +135,10 @@ const AUTO_REFRESH_OPTIONS = [
 const REALTIME_PAGE_SIZE_OPTIONS = [10, 50, 100, 150, 300] as const;
 const DEFAULT_ACCOUNT_PAGE_SIZE = ACCOUNT_OVERVIEW_TABLE_PAGE_SIZE_OPTIONS[0];
 const DEFAULT_REALTIME_PAGE_SIZE = 10;
+const REALTIME_SUCCESS_BLOCK_ROWS = 5;
+const REALTIME_SUCCESS_BLOCK_SIZE = 12;
+const REALTIME_SUCCESS_BLOCK_GAP = 4;
+const REALTIME_SUCCESS_DEFAULT_COLUMNS = 50;
 const MAX_USAGE_IMPORT_FILE_SIZE = 64 * 1024 * 1024;
 const EMPTY_STATUS_BAR_DATA: StatusBarData = {
   blocks: [],
@@ -159,6 +165,24 @@ const parseDateTimeLocalValue = (value: string) => {
   if (!value) return null;
   const timestamp = new Date(value).getTime();
   return Number.isFinite(timestamp) ? timestamp : null;
+};
+
+const calculateRealtimeSuccessColumns = (width: number) => {
+  const contentWidth = Math.max(0, width - 24);
+  return Math.max(
+    1,
+    Math.floor(
+      (contentWidth + REALTIME_SUCCESS_BLOCK_GAP) /
+        (REALTIME_SUCCESS_BLOCK_SIZE + REALTIME_SUCCESS_BLOCK_GAP)
+    )
+  );
+};
+
+const getDefaultRealtimeSuccessColumns = () => {
+  if (typeof window === 'undefined') {
+    return REALTIME_SUCCESS_DEFAULT_COLUMNS;
+  }
+  return calculateRealtimeSuccessColumns(window.innerWidth);
 };
 
 type StatusFilter = 'all' | 'success' | 'failed';
@@ -635,6 +659,66 @@ const buildRealtimeLogRows = (rows: MonitoringEventRow[]): RealtimeLogRow[] => {
       right.requestCount - left.requestCount ||
       right.id.localeCompare(left.id)
   );
+};
+
+const buildRealtimeSuccessStatusData = (
+  rows: MonitoringEventRow[],
+  blockCount: number
+): StatusBarData => {
+  const timestamps = rows.map((row) => row.timestampMs).filter(Number.isFinite);
+  const minTimestamp = timestamps.length > 0 ? Math.min(...timestamps) : Date.now();
+  const maxTimestamp = timestamps.length > 0 ? Math.max(...timestamps) : minTimestamp;
+  const resolvedBlockCount = Math.max(REALTIME_SUCCESS_BLOCK_ROWS, blockCount);
+  const duration = Math.max(1, Math.ceil((maxTimestamp - minTimestamp + 1) / resolvedBlockCount));
+  const windowEnd = minTimestamp + duration * resolvedBlockCount;
+  const blockDetails: StatusBlockDetail[] = Array.from(
+    { length: resolvedBlockCount },
+    (_, index) => ({
+      success: 0,
+      failure: 0,
+      rate: -1,
+      startTime: minTimestamp + index * duration,
+      endTime: Math.min(minTimestamp + (index + 1) * duration, windowEnd),
+    })
+  );
+
+  rows.forEach((row) => {
+    if (row.timestampMs < minTimestamp || row.timestampMs > maxTimestamp) {
+      return;
+    }
+    const index = Math.min(
+      resolvedBlockCount - 1,
+      Math.max(0, Math.floor((row.timestampMs - minTimestamp) / duration))
+    );
+    if (row.failed) {
+      blockDetails[index].failure += 1;
+    } else {
+      blockDetails[index].success += 1;
+    }
+  });
+
+  let totalSuccess = 0;
+  let totalFailure = 0;
+  const blocks: StatusBlockState[] = blockDetails.map((detail) => {
+    totalSuccess += detail.success;
+    totalFailure += detail.failure;
+    const total = detail.success + detail.failure;
+    detail.rate = total > 0 ? detail.success / total : -1;
+
+    if (total === 0) return 'idle';
+    if (detail.failure === 0) return 'success';
+    if (detail.success === 0) return 'failure';
+    return 'mixed';
+  });
+  const total = totalSuccess + totalFailure;
+
+  return {
+    blocks,
+    blockDetails,
+    successRate: total > 0 ? (totalSuccess / total) * 100 : 100,
+    totalSuccess,
+    totalFailure,
+  };
 };
 
 function SummaryCard({ label, value, meta, tone, variant = 'primary' }: SummaryCardProps) {
@@ -1874,16 +1958,19 @@ export function AccountOverviewCard({
 export function MonitoringCenterPage() {
   const { t, i18n } = useTranslation();
   const config = useConfigStore((state) => state.config);
+  const autoRefreshMs = useMonitoringStore((state) => state.autoRefreshMs);
+  const setAutoRefreshMs = useMonitoringStore((state) => state.setAutoRefreshMs);
+  const timeRange = useMonitoringStore((state) => state.timeRange);
+  const setTimeRange = useMonitoringStore((state) => state.setTimeRange);
+  const customStartInput = useMonitoringStore((state) => state.customStartInput);
+  const customEndInput = useMonitoringStore((state) => state.customEndInput);
+  const setCustomTimeRange = useMonitoringStore((state) => state.setCustomTimeRange);
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const showNotification = useNotificationStore((state) => state.showNotification);
   const showConfirmation = useNotificationStore((state) => state.showConfirmation);
-  const [timeRange, setTimeRange] = useState<MonitoringTimeRange>('today');
-  const [customStartInput, setCustomStartInput] = useState(getTodayStartInputValue);
-  const [customEndInput, setCustomEndInput] = useState(getCurrentInputValue);
   const [customDraftStartInput, setCustomDraftStartInput] = useState(getTodayStartInputValue);
   const [customDraftEndInput, setCustomDraftEndInput] = useState(getCurrentInputValue);
   const [searchInput, setSearchInput] = useState('');
-  const [autoRefreshMs, setAutoRefreshMs] = useState('5000');
   const [selectedAccount, setSelectedAccount] = useState('all');
   const [selectedProvider, setSelectedProvider] = useState('all');
   const [selectedModel, setSelectedModel] = useState('all');
@@ -1924,6 +2011,10 @@ export function MonitoringCenterPage() {
   const accountQuotaStatesRef = useRef<Record<string, AccountQuotaState>>({});
   const accountQuotaRequestIdsRef = useRef<Record<string, number>>({});
   const usageImportInputRef = useRef<HTMLInputElement | null>(null);
+  const realtimeSuccessSectionRef = useRef<HTMLElement | null>(null);
+  const [realtimeSuccessColumns, setRealtimeSuccessColumns] = useState(
+    getDefaultRealtimeSuccessColumns
+  );
   const deferredSearch = useDeferredValue(searchInput);
   const accountPage =
     accountOverviewMode === 'card' ? accountPageByMode.card : accountPageByMode.table;
@@ -1994,6 +2085,7 @@ export function MonitoringCenterPage() {
     loading: monitoringLoading,
     error: monitoringError,
     authFiles,
+    allRows,
     filteredRows,
     refreshMeta,
   } = useMonitoringData({
@@ -2038,6 +2130,57 @@ export function MonitoringCenterPage() {
   useEffect(() => {
     accountQuotaStatesRef.current = accountQuotaStates;
   }, [accountQuotaStates]);
+
+  useLayoutEffect(() => {
+    const element = realtimeSuccessSectionRef.current;
+    if (!element) return;
+    let animationFrameId: number | null = null;
+
+    const updateColumns = () => {
+      const nextColumns = calculateRealtimeSuccessColumns(element.clientWidth);
+      setRealtimeSuccessColumns((previous) =>
+        previous === nextColumns ? previous : nextColumns
+      );
+    };
+    const scheduleUpdateColumns = () => {
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
+      animationFrameId = window.requestAnimationFrame(() => {
+        animationFrameId = null;
+        updateColumns();
+      });
+    };
+
+    updateColumns();
+    window.addEventListener('resize', scheduleUpdateColumns);
+    if (typeof ResizeObserver === 'undefined') {
+      return () => {
+        window.removeEventListener('resize', scheduleUpdateColumns);
+        if (animationFrameId !== null) {
+          window.cancelAnimationFrame(animationFrameId);
+        }
+      };
+    }
+
+    const resizeObserver = new ResizeObserver(scheduleUpdateColumns);
+    resizeObserver.observe(element);
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', scheduleUpdateColumns);
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, []);
+
+  const realtimeSuccessGridStyle = useMemo(
+    () =>
+      ({
+        '--realtime-success-columns': realtimeSuccessColumns,
+      }) as CSSProperties,
+    [realtimeSuccessColumns]
+  );
 
   useEffect(() => {
     writeAccountOverviewUiState({
@@ -2170,7 +2313,25 @@ export function MonitoringCenterPage() {
     () => scopedRows.filter((row) => row.statsIncluded),
     [scopedRows]
   );
+  const realtimeSuccessRows = useMemo(
+    () =>
+      focusedAccount ? allRows.filter((row) => row.account === focusedAccount) : allRows,
+    [allRows, focusedAccount]
+  );
+  const realtimeSuccessBlockCount = realtimeSuccessColumns * REALTIME_SUCCESS_BLOCK_ROWS;
   const accountStatusNowMs = lastRefreshedAt?.getTime() ?? Date.now();
+  const realtimeSuccessStatusData = useMemo(
+    () => buildRealtimeSuccessStatusData(realtimeSuccessRows, realtimeSuccessBlockCount),
+    [realtimeSuccessBlockCount, realtimeSuccessRows]
+  );
+  const realtimeHealthLatestRequestText = useMemo(() => {
+    const latestTimestamp = realtimeSuccessRows.reduce<number | null>((latest, row) => {
+      if (!Number.isFinite(row.timestampMs)) return latest;
+      return latest === null || row.timestampMs > latest ? row.timestampMs : latest;
+    }, null);
+
+    return latestTimestamp === null ? '--' : new Date(latestTimestamp).toLocaleString(i18n.language);
+  }, [i18n.language, realtimeSuccessRows]);
   const accountStatusBounds = useMemo(
     () => getRangeBounds(timeRange, accountStatusNowMs, customTimeRange),
     [accountStatusNowMs, customTimeRange, timeRange]
@@ -2437,7 +2598,7 @@ export function MonitoringCenterPage() {
       setIsCustomRangeModalOpen(false);
       setTimeRange(range);
     },
-    [openCustomRangeModal]
+    [openCustomRangeModal, setTimeRange]
   );
 
   const handleCustomDraftStartChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
@@ -2450,11 +2611,16 @@ export function MonitoringCenterPage() {
 
   const applyCustomTimeRange = useCallback(() => {
     if (customDraftTimeRangeError) return;
-    setCustomStartInput(customDraftStartInput);
-    setCustomEndInput(customDraftEndInput);
+    setCustomTimeRange(customDraftStartInput, customDraftEndInput);
     setTimeRange('custom');
     setIsCustomRangeModalOpen(false);
-  }, [customDraftEndInput, customDraftStartInput, customDraftTimeRangeError]);
+  }, [
+    customDraftEndInput,
+    customDraftStartInput,
+    customDraftTimeRangeError,
+    setCustomTimeRange,
+    setTimeRange,
+  ]);
 
   const toggleFailedOnly = useCallback(() => {
     setSelectedStatus((previous) => (previous === 'failed' ? 'all' : 'failed'));
@@ -3435,6 +3601,30 @@ export function MonitoringCenterPage() {
           t={t}
         />
       </MonitoringPanel>
+
+      <section
+        ref={realtimeSuccessSectionRef}
+        className={`${styles.panel} ${styles.realtimeSuccessSection}`}
+        style={realtimeSuccessGridStyle}
+        aria-label={t('monitoring.realtime_health_status_title')}
+      >
+        <div className={styles.panelHeader}>
+          <div className={styles.panelHeaderCopy}>
+            <h2 className={styles.panelTitle}>
+              {t('monitoring.realtime_health_status_title')}
+            </h2>
+            <p className={styles.panelSubtitle}>
+              {`${t('monitoring.latest_request_time')}: ${realtimeHealthLatestRequestText}`}
+            </p>
+          </div>
+        </div>
+        <MonitoringHealthStatusBar
+          statusData={realtimeSuccessStatusData}
+          locale={i18n.language}
+          t={t}
+          showRate={false}
+        />
+      </section>
 
       <MonitoringPanel
         title={t('monitoring.realtime_table_title')}
