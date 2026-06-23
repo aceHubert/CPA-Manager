@@ -1,11 +1,28 @@
-export const AUTH_FILES_SORT_MODES = ['default', 'name-asc', 'plan-desc', 'plan-asc'] as const;
+export const AUTH_FILES_SORT_MODES = [
+  'default',
+  'name-asc',
+  'note-asc',
+  'note-desc',
+  'priority-desc',
+  'priority-asc',
+  'plan-desc',
+  'plan-asc',
+] as const;
 
 export type AuthFilesSortMode = (typeof AUTH_FILES_SORT_MODES)[number];
+
+export const AUTH_FILES_VIEW_MODES = ['diagram', 'list'] as const;
+export type AuthFilesViewMode = (typeof AUTH_FILES_VIEW_MODES)[number];
+const AUTH_FILES_VIEW_MODE_SET = new Set<AuthFilesViewMode>(AUTH_FILES_VIEW_MODES);
+
+export const isAuthFilesViewMode = (value: unknown): value is AuthFilesViewMode =>
+  typeof value === 'string' && AUTH_FILES_VIEW_MODE_SET.has(value as AuthFilesViewMode);
 
 export type AuthFilesUiState = {
   filter?: string;
   problemOnly?: boolean;
   disabledOnly?: boolean;
+  healthyOnly?: boolean;
   compactMode?: boolean;
   search?: string;
   page?: number;
@@ -13,6 +30,7 @@ export type AuthFilesUiState = {
   regularPageSize?: number;
   compactPageSize?: number;
   sortMode?: AuthFilesSortMode;
+  viewMode?: AuthFilesViewMode;
 };
 
 const AUTH_FILES_UI_STATE_KEY = 'authFilesPage.uiState';
@@ -20,7 +38,7 @@ const AUTH_FILES_COMPACT_MODE_KEY = 'authFilesPage.compactMode';
 const AUTH_FILES_SORT_MODE_SET = new Set<AuthFilesSortMode>(AUTH_FILES_SORT_MODES);
 const LEGACY_AUTH_FILES_SORT_MODE_MAP: Record<string, AuthFilesSortMode> = {
   az: 'name-asc',
-  priority: 'default',
+  priority: 'priority-desc',
 };
 
 export const isAuthFilesSortMode = (value: unknown): value is AuthFilesSortMode =>

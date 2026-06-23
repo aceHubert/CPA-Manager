@@ -20,6 +20,7 @@ type authSnapshot struct {
 	Label        string
 	FileName     string
 	Provider     string
+	ProjectID    string
 	CapturedAtMS int64
 }
 
@@ -36,6 +37,18 @@ func newAuthSnapshotResolver() *authSnapshotResolver {
 	return &authSnapshotResolver{
 		client: &http.Client{Timeout: 5 * time.Second},
 	}
+}
+
+func (r *authSnapshotResolver) clear() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.baseURL = ""
+	r.managementKey = ""
+	r.expiresAt = time.Time{}
+	r.snapshots = nil
 }
 
 func (r *authSnapshotResolver) lookup(ctx context.Context, cfg RuntimeConfig, authIndices map[string]struct{}) map[string]authSnapshot {
@@ -146,6 +159,10 @@ func (r *authSnapshotResolver) fetch(ctx context.Context, baseURL string, manage
 			readAuthFileString(file, "provider"),
 			readAuthFileString(file, "type"),
 		)
+		projectID := firstNonEmpty(
+			readAuthFileString(file, "project_id", "projectId"),
+			readAuthFileString(file, "gemini_virtual_project", "geminiVirtualProject"),
+		)
 		if account == "" {
 			account = firstNonEmpty(label, fileName)
 		}
@@ -154,6 +171,7 @@ func (r *authSnapshotResolver) fetch(ctx context.Context, baseURL string, manage
 			Label:        label,
 			FileName:     fileName,
 			Provider:     provider,
+			ProjectID:    projectID,
 			CapturedAtMS: capturedAt,
 		}
 	}

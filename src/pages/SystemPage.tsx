@@ -14,7 +14,6 @@ import {
 } from '@/stores';
 import { configApi, versionApi } from '@/services/api';
 import { apiKeysApi } from '@/services/api/apiKeys';
-import { usageServiceApi, type UsageServiceStatus } from '@/services/api/usageService';
 import { classifyModels } from '@/utils/models';
 import { STORAGE_KEY_AUTH } from '@/utils/constants';
 import { INLINE_LOGO_JPEG } from '@/assets/logoInline';
@@ -27,6 +26,7 @@ import iconKimiLight from '@/assets/icons/kimi-light.svg';
 import iconKimiDark from '@/assets/icons/kimi-dark.svg';
 import iconGlm from '@/assets/icons/glm.svg';
 import iconGrok from '@/assets/icons/grok.svg';
+import iconGrokDark from '@/assets/icons/grok-dark.svg';
 import iconDeepseek from '@/assets/icons/deepseek.svg';
 import iconMinimax from '@/assets/icons/minimax.svg';
 import styles from './SystemPage.module.scss';
@@ -38,7 +38,7 @@ const MODEL_CATEGORY_ICONS: Record<string, string | { light: string; dark: strin
   qwen: iconQwen,
   kimi: { light: iconKimiLight, dark: iconKimiDark },
   glm: iconGlm,
-  grok: iconGrok,
+  grok: { light: iconGrok, dark: iconGrokDark },
   deepseek: iconDeepseek,
   minimax: iconMinimax,
 };
@@ -94,8 +94,6 @@ export function SystemPage() {
   const [requestLogSaving, setRequestLogSaving] = useState(false);
   const [checkingAppVersion, setCheckingAppVersion] = useState(false);
   const [checkingVersion, setCheckingVersion] = useState(false);
-  const [usageServiceStatus, setUsageServiceStatus] = useState<UsageServiceStatus | null>(null);
-  const [usageServiceChecking, setUsageServiceChecking] = useState(false);
 
   const apiKeysCache = useRef<string[]>([]);
   const versionTapCount = useRef(0);
@@ -109,9 +107,6 @@ export function SystemPage() {
   const requestLogEnabled = config?.requestLog ?? false;
   const requestLogDirty = requestLogDraft !== requestLogEnabled;
   const canEditRequestLog = auth.connectionStatus === 'connected' && Boolean(config);
-  const usageServiceConfig = config?.externalUsageService;
-  const usageServiceBase = usageServiceConfig?.serviceBase ?? '';
-  const hasConfiguredUsageService = Boolean(usageServiceConfig?.configured && usageServiceBase);
 
   const appVersion = __APP_VERSION__ || t('system_info.version_unknown');
   const apiVersion = auth.serverVersion || t('system_info.version_unknown');
@@ -315,8 +310,7 @@ export function SystemPage() {
         showNotification(t('system_info.manager_version_is_latest'), 'success');
       }
     } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+      const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
       const suffix = message ? `: ${message}` : '';
       showNotification(`${t('system_info.manager_version_check_error')}${suffix}`, 'error');
     } finally {
@@ -357,53 +351,11 @@ export function SystemPage() {
     }
   }, [auth.serverVersion, showNotification, t]);
 
-  const loadUsageServiceStatus = useCallback(
-    async (base = usageServiceBase, notifyOnError = true) => {
-      const target = base.trim();
-      if (!target) {
-        if (notifyOnError) {
-          showNotification(
-            t('usage_service.url_required', { defaultValue: '请先填写 Usage Service 地址' }),
-            'warning'
-          );
-        }
-        return null;
-      }
-      setUsageServiceChecking(true);
-      try {
-        const status = await usageServiceApi.getStatus(target, auth.managementKey);
-        setUsageServiceStatus(status);
-        return status;
-      } catch (error: unknown) {
-        const message =
-          error instanceof Error ? error.message : typeof error === 'string' ? error : '';
-        if (notifyOnError) {
-          showNotification(
-            `${t('usage_service.status_failed', { defaultValue: 'Usage Service 状态检查失败' })}${message ? `: ${message}` : ''}`,
-            'error'
-          );
-        }
-        return null;
-      } finally {
-        setUsageServiceChecking(false);
-      }
-    },
-    [auth.managementKey, showNotification, t, usageServiceBase]
-  );
-
   useEffect(() => {
     fetchConfig().catch(() => {
       // ignore
     });
   }, [fetchConfig]);
-
-  useEffect(() => {
-    if (!hasConfiguredUsageService) {
-      setUsageServiceStatus(null);
-      return;
-    }
-    void loadUsageServiceStatus(usageServiceBase, false);
-  }, [hasConfiguredUsageService, loadUsageServiceStatus, usageServiceBase]);
 
   useEffect(() => {
     if (requestLogModalOpen && !requestLogTouched) {
@@ -615,82 +567,6 @@ export function SystemPage() {
             </div>
           )}
         </Card>
-
-        {hasConfiguredUsageService ? (
-          <Card
-            title={t('usage_service.title', { defaultValue: '外部用量统计服务' })}
-            extra={
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => void loadUsageServiceStatus()}
-                loading={usageServiceChecking}
-              >
-                {t('usage_service.check_status', { defaultValue: '检查状态' })}
-              </Button>
-            }
-          >
-            <p className={styles.sectionDescription}>
-              {t('usage_service.description', {
-                defaultValue:
-                  '当面板由 CPA 自动载入时，可配置独立部署的 Usage Service 读取 SQLite 持久化用量；Docker 内置模式通常不需要配置这里。',
-              })}
-            </p>
-            <div className={styles.usageServiceStatusGrid}>
-              <div>
-                <span>{t('usage_service.url_label', { defaultValue: 'Usage Service 地址' })}</span>
-                <strong>{usageServiceBase}</strong>
-              </div>
-              {usageServiceStatus ? (
-                <>
-                  <div>
-                    <span>{t('usage_service.collector', { defaultValue: '采集器' })}</span>
-                    <strong>{usageServiceStatus.collector?.collector || '-'}</strong>
-                  </div>
-                  <div>
-                    <span>{t('usage_service.mode', { defaultValue: '采集模式' })}</span>
-                    <strong>{usageServiceStatus.collector?.mode || '-'}</strong>
-                  </div>
-                  <div>
-                    <span>{t('usage_service.transport', { defaultValue: '传输协议' })}</span>
-                    <strong>{usageServiceStatus.collector?.transport || '-'}</strong>
-                  </div>
-                  <div>
-                    <span>{t('usage_service.queue', { defaultValue: '队列' })}</span>
-                    <strong>{usageServiceStatus.collector?.queue || '-'}</strong>
-                  </div>
-                  <div>
-                    <span>{t('usage_service.events', { defaultValue: '事件数' })}</span>
-                    <strong>{usageServiceStatus.events ?? '-'}</strong>
-                  </div>
-                  <div>
-                    <span>{t('usage_service.last_consumed', { defaultValue: '最后消费' })}</span>
-                    <strong>
-                      {usageServiceStatus.collector?.lastConsumedAt
-                        ? new Date(usageServiceStatus.collector.lastConsumedAt).toLocaleString(
-                            i18n.language
-                          )
-                        : '-'}
-                    </strong>
-                  </div>
-                  <div>
-                    <span>{t('usage_service.last_error', { defaultValue: '最后错误' })}</span>
-                    <strong>{usageServiceStatus.collector?.lastError || '-'}</strong>
-                  </div>
-                </>
-              ) : (
-                <div>
-                  <span>{t('usage_service.status_label', { defaultValue: '状态' })}</span>
-                  <strong>
-                    {usageServiceChecking
-                      ? t('common.loading')
-                      : t('usage_service.configured', { defaultValue: '已配置' })}
-                  </strong>
-                </div>
-              )}
-            </div>
-          </Card>
-        ) : null}
 
         <Card title={t('system_info.clear_login_title')}>
           <p className={styles.sectionDescription}>{t('system_info.clear_login_desc')}</p>

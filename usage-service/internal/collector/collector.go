@@ -2,7 +2,9 @@ package collector
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -34,6 +36,9 @@ type RuntimeConfig struct {
 	CollectorMode  string
 	Queue          string
 	PopSide        string
+	BatchSize      int
+	PollInterval   time.Duration
+	TLSSkipVerify  bool
 }
 
 type Manager struct {
@@ -104,6 +109,13 @@ func (m *Manager) setStatus(update func(*Status)) {
 func (m *Manager) run(ctx context.Context, cfg RuntimeConfig) {
 	mode := collectorMode(valueOr(cfg.CollectorMode, m.base.CollectorMode))
 
+	if mode == "subscribe" {
+		m.runSubscribe(ctx, cfg, mode)
+		return
+	}
+	if mode == "auto" && m.runSubscribe(ctx, cfg, mode) {
+		return
+	}
 	if mode == "http" {
 		m.runHTTP(ctx, cfg, mode)
 		return
@@ -112,6 +124,129 @@ func (m *Manager) run(ctx context.Context, cfg RuntimeConfig) {
 		return
 	}
 	m.runRESP(ctx, cfg)
+}
+
+// runSubscribe 走 Redis Pub/Sub 订阅模式（CPA v7.0.7+）。返回值含义：
+//   - true：ctx 已取消或永久退出，调用方无需降级
+//   - false：协议不支持，且 mode=auto 时应降级到 HTTP/RESP
+//
+// mode=auto 时仅"首次探测"失败才降级；一旦订阅成功后再次断连则坚持订阅模式重连。
+func (m *Manager) runSubscribe(ctx context.Context, cfg RuntimeConfig, mode string) bool {
+	channel := valueOr(cfg.Queue, m.base.Queue)
+	backoff := time.Second
+	subscribed := false
+
+	fallback := func() bool {
+		m.setStatus(func(status *Status) {
+			status.Collector = "starting"
+			status.Transport = "http"
+			status.LastError = ""
+		})
+		return false
+	}
+
+	for {
+		if ctx.Err() != nil {
+			return true
+		}
+		client, err := resp.Dial(cfg.CPAUpstreamURL, cfg.TLSSkipVerify)
+		if err != nil {
+			if mode == "auto" && !subscribed {
+				return fallback()
+			}
+			m.markError("connect", err)
+			sleep(ctx, backoff)
+			backoff = nextBackoff(backoff)
+			continue
+		}
+		if err := client.Auth(cfg.ManagementKey); err != nil {
+			_ = client.Close()
+			if mode == "auto" && !subscribed {
+				return fallback()
+			}
+			m.markError("auth", err)
+			sleep(ctx, backoff)
+			backoff = nextBackoff(backoff)
+			continue
+		}
+		if err := client.Subscribe(channel); err != nil {
+			_ = client.Close()
+			if mode == "auto" && !subscribed {
+				return fallback()
+			}
+			m.markError("subscribe", err)
+			sleep(ctx, backoff)
+			backoff = nextBackoff(backoff)
+			continue
+		}
+		subscribed = true
+		backoff = time.Second
+		m.setStatus(func(status *Status) {
+			status.Collector = "running"
+			status.Transport = "subscribe"
+			status.LastError = ""
+		})
+
+		err = m.consumeSubscribe(ctx, cfg, client)
+		_ = client.Close()
+		if ctx.Err() != nil {
+			return true
+		}
+		if err != nil {
+			m.markError("subscribe", err)
+			sleep(ctx, backoff)
+			backoff = nextBackoff(backoff)
+		}
+	}
+}
+
+func (m *Manager) consumeSubscribe(ctx context.Context, cfg RuntimeConfig, client *resp.Client) error {
+	const pingInterval = 30 * time.Second
+	const readWindow = pingInterval + 10*time.Second
+
+	// 通过后台 goroutine 监听 ctx，触发读超时让阻塞中的 ReadMessage 立即返回。
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = client.SetReadDeadline(time.Now())
+		case <-done:
+		}
+	}()
+
+	lastPing := time.Now()
+	for {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err := client.SetReadDeadline(time.Now().Add(readWindow)); err != nil {
+			return err
+		}
+		_, payload, err := client.ReadMessage()
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			var ne net.Error
+			if errors.As(err, &ne) && ne.Timeout() {
+				if time.Since(lastPing) >= pingInterval {
+					if perr := client.SendSubscribePing(); perr != nil {
+						return perr
+					}
+					lastPing = time.Now()
+				}
+				continue
+			}
+			return err
+		}
+		if strings.TrimSpace(payload) == "" {
+			continue
+		}
+		if err := m.processItems(ctx, cfg, []string{payload}); err != nil {
+			return err
+		}
+	}
 }
 
 func (m *Manager) runHTTP(ctx context.Context, cfg RuntimeConfig, mode string) bool {
@@ -151,7 +286,7 @@ func (m *Manager) runRESP(ctx context.Context, cfg RuntimeConfig) {
 		if ctx.Err() != nil {
 			return
 		}
-		client, err := resp.Dial(cfg.CPAUpstreamURL, m.base.TLSSkipVerify)
+		client, err := resp.Dial(cfg.CPAUpstreamURL, cfg.TLSSkipVerify)
 		if err != nil {
 			m.markError("connect", err)
 			sleep(ctx, backoff)
@@ -186,7 +321,7 @@ func (m *Manager) runRESP(ctx context.Context, cfg RuntimeConfig) {
 }
 
 func (m *Manager) consumeHTTP(ctx context.Context, cfg RuntimeConfig, client *httpqueue.Client) error {
-	ticker := time.NewTicker(m.pollInterval())
+	ticker := time.NewTicker(m.pollInterval(cfg))
 	defer ticker.Stop()
 
 	for {
@@ -198,7 +333,7 @@ func (m *Manager) consumeHTTP(ctx context.Context, cfg RuntimeConfig, client *ht
 			status.Transport = "http"
 			status.LastError = ""
 		})
-		items, err := client.Pop(ctx, m.batchSize())
+		items, err := client.Pop(ctx, m.batchSize(cfg))
 		if err != nil {
 			return err
 		}
@@ -217,14 +352,14 @@ func (m *Manager) consumeHTTP(ctx context.Context, cfg RuntimeConfig, client *ht
 }
 
 func (m *Manager) consumeRESP(ctx context.Context, cfg RuntimeConfig, client *resp.Client, queue string, popSide string) error {
-	ticker := time.NewTicker(m.pollInterval())
+	ticker := time.NewTicker(m.pollInterval(cfg))
 	defer ticker.Stop()
 
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		items, err := client.Pop(queue, popSide, m.batchSize())
+		items, err := client.Pop(queue, popSide, m.batchSize(cfg))
 		if err != nil {
 			return err
 		}
@@ -251,9 +386,24 @@ func (m *Manager) processItems(ctx context.Context, cfg RuntimeConfig, items []s
 	})
 	events := make([]usage.Event, 0, len(items))
 	for _, item := range items {
-		event, err := usage.NormalizeRaw([]byte(item))
+		payload := strings.TrimSpace(item)
+		if payload == "" {
+			continue
+		}
+		control, enabled := classifyUsageControlPayload(payload)
+		switch control {
+		case usageControlSupportRefresh:
+			continue
+		case usageControlRefresh:
+			if enabled && m.snapshotResolver != nil {
+				m.snapshotResolver.clear()
+			}
+			continue
+		}
+
+		event, err := usage.NormalizeRaw([]byte(payload))
 		if err != nil {
-			_ = m.store.AddDeadLetter(ctx, item, err)
+			_ = m.store.AddDeadLetter(ctx, payload, err)
 			m.setStatus(func(status *Status) {
 				status.DeadLetters++
 			})
@@ -274,6 +424,30 @@ func (m *Manager) processItems(ctx context.Context, cfg RuntimeConfig, items []s
 		})
 	}
 	return nil
+}
+
+type usageControlPayload string
+
+const (
+	usageControlNone           usageControlPayload = ""
+	usageControlSupportRefresh usageControlPayload = "support_refresh"
+	usageControlRefresh        usageControlPayload = "refresh"
+)
+
+func classifyUsageControlPayload(payload string) (usageControlPayload, bool) {
+	var record map[string]bool
+	if err := json.Unmarshal([]byte(payload), &record); err != nil || len(record) != 1 {
+		return usageControlNone, false
+	}
+	for key, enabled := range record {
+		switch key {
+		case "support_refresh":
+			return usageControlSupportRefresh, enabled
+		case "refresh":
+			return usageControlRefresh, enabled
+		}
+	}
+	return usageControlNone, false
 }
 
 func (m *Manager) enrichAccountSnapshots(ctx context.Context, cfg RuntimeConfig, events []usage.Event) {
@@ -306,6 +480,9 @@ func (m *Manager) enrichAccountSnapshots(ctx context.Context, cfg RuntimeConfig,
 		events[i].AuthLabelSnapshot = snapshot.Label
 		events[i].AuthFileSnapshot = snapshot.FileName
 		events[i].AuthProviderSnapshot = snapshot.Provider
+		if events[i].AuthProjectIDSnapshot == "" {
+			events[i].AuthProjectIDSnapshot = snapshot.ProjectID
+		}
 		events[i].AuthSnapshotAtMS = snapshot.CapturedAtMS
 	}
 }
@@ -343,21 +520,27 @@ func valueOr(value string, fallback string) string {
 
 func collectorMode(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "http", "resp":
+	case "http", "resp", "subscribe":
 		return strings.ToLower(strings.TrimSpace(value))
 	default:
 		return "auto"
 	}
 }
 
-func (m *Manager) batchSize() int {
+func (m *Manager) batchSize(cfg RuntimeConfig) int {
+	if cfg.BatchSize > 0 {
+		return cfg.BatchSize
+	}
 	if m.base.BatchSize <= 0 {
 		return 100
 	}
 	return m.base.BatchSize
 }
 
-func (m *Manager) pollInterval() time.Duration {
+func (m *Manager) pollInterval(cfg RuntimeConfig) time.Duration {
+	if cfg.PollInterval > 0 {
+		return cfg.PollInterval
+	}
 	if m.base.PollInterval <= 0 {
 		return 500 * time.Millisecond
 	}

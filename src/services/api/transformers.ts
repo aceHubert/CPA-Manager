@@ -9,9 +9,8 @@ import type {
   AmpcodeModelMapping,
   AmpcodeUpstreamApiKeyMapping
 } from '@/types';
-import type { Config, ExternalUsageServiceConfig } from '@/types/config';
+import type { Config } from '@/types/config';
 import { buildHeaderObject } from '@/utils/headers';
-import { normalizeApiBase } from '@/utils/connection';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -126,13 +125,13 @@ const normalizeApiKeyEntry = (entry: unknown): ApiKeyEntry | null => {
   const apiKey =
     record?.['api-key'] ?? record?.apiKey ?? record?.key ?? (typeof entry === 'string' ? entry : '');
   const trimmed = String(apiKey || '').trim();
-  if (!trimmed) return null;
-
-  const proxyUrl = record ? (record['proxy-url'] ?? record.proxyUrl) : undefined;
-  const headers = record ? normalizeHeaders(record.headers) : undefined;
   const authIndex = normalizeAuthIndex(
     record?.['auth-index'] ?? record?.authIndex ?? record?.['auth_index']
   );
+  if (!trimmed && !authIndex) return null;
+
+  const proxyUrl = record ? record['proxy-url'] ?? record.proxyUrl : undefined;
+  const headers = record ? normalizeHeaders(record.headers) : undefined;
 
   const result: ApiKeyEntry = {
     apiKey: trimmed,
@@ -148,7 +147,10 @@ const normalizeProviderKeyConfig = (item: unknown): ProviderKeyConfig | null => 
   const record = isRecord(item) ? item : null;
   const apiKey = record?.['api-key'] ?? record?.apiKey ?? (typeof item === 'string' ? item : '');
   const trimmed = String(apiKey || '').trim();
-  if (!trimmed) return null;
+  const authIndex = normalizeAuthIndex(
+    record?.['auth-index'] ?? record?.authIndex ?? record?.['auth_index']
+  );
+  if (!trimmed && !authIndex) return null;
 
   const config: ProviderKeyConfig = { apiKey: trimmed };
   const priority = record?.priority ?? record?.['priority'];
@@ -160,8 +162,8 @@ const normalizeProviderKeyConfig = (item: unknown): ProviderKeyConfig | null => 
   }
   const prefix = normalizePrefix(record?.prefix ?? record?.['prefix']);
   if (prefix) config.prefix = prefix;
-  const baseUrl = record ? (record['base-url'] ?? record.baseUrl) : undefined;
-  const proxyUrl = record ? (record['proxy-url'] ?? record.proxyUrl) : undefined;
+  const baseUrl = record ? record['base-url'] ?? record.baseUrl : undefined;
+  const proxyUrl = record ? record['proxy-url'] ?? record.proxyUrl : undefined;
   if (baseUrl) config.baseUrl = String(baseUrl);
   const websockets = normalizeBoolean(record?.websockets ?? record?.['websockets']);
   if (websockets !== undefined) config.websockets = websockets;
@@ -177,9 +179,6 @@ const normalizeProviderKeyConfig = (item: unknown): ProviderKeyConfig | null => 
       record?.excluded_models
   );
   if (excludedModels.length) config.excludedModels = excludedModels;
-  const authIndex = normalizeAuthIndex(
-    record?.['auth-index'] ?? record?.authIndex ?? record?.['auth_index']
-  );
   if (authIndex) config.authIndex = authIndex;
 
   const cloakRaw = record?.cloak;
@@ -217,7 +216,10 @@ const normalizeGeminiKeyConfig = (item: unknown): GeminiKeyConfig | null => {
     apiKey = item;
   }
   const trimmed = String(apiKey || '').trim();
-  if (!trimmed) return null;
+  const authIndex = normalizeAuthIndex(
+    record?.['auth-index'] ?? record?.authIndex ?? record?.['auth_index']
+  );
+  if (!trimmed && !authIndex) return null;
 
   const config: GeminiKeyConfig = { apiKey: trimmed };
   const priority = record?.priority ?? record?.['priority'];
@@ -239,9 +241,6 @@ const normalizeGeminiKeyConfig = (item: unknown): GeminiKeyConfig | null => {
   if (headers) config.headers = headers;
   const excludedModels = normalizeExcludedModels(record?.['excluded-models'] ?? record?.excludedModels);
   if (excludedModels.length) config.excludedModels = excludedModels;
-  const authIndex = normalizeAuthIndex(
-    record?.['auth-index'] ?? record?.authIndex ?? record?.['auth_index']
-  );
   if (authIndex) config.authIndex = authIndex;
   return config;
 };
@@ -384,32 +383,6 @@ const normalizeAmpcodeConfig = (payload: unknown): AmpcodeConfig | undefined => 
   return config;
 };
 
-const normalizeExternalUsageServiceConfig = (raw: unknown): ExternalUsageServiceConfig => {
-  const fallback: ExternalUsageServiceConfig = {
-    serviceBase: '',
-    configured: false,
-  };
-  if (!isRecord(raw)) return fallback;
-
-  const section =
-    raw['external-usage-service'] ??
-    raw.externalUsageService ??
-    raw['usage-service'] ??
-    raw.usageService;
-  if (!isRecord(section)) return fallback;
-
-  const rawServiceBase = section['base-url'] ?? section.baseUrl ?? section.url ?? section.serviceBase;
-  const serviceBase =
-    rawServiceBase === undefined || rawServiceBase === null
-      ? ''
-      : normalizeApiBase(String(rawServiceBase));
-
-  return {
-    serviceBase,
-    configured: Boolean(serviceBase),
-  };
-};
-
 /**
  * 规范化 /config 返回值
  */
@@ -544,8 +517,6 @@ export const normalizeConfigResponse = (raw: unknown): Config => {
   if (oauthExcluded) {
     config.oauthExcludedModels = oauthExcluded;
   }
-
-  config.externalUsageService = normalizeExternalUsageServiceConfig(raw);
 
   return config;
 };

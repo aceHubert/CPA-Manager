@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { useAuthStore } from '@/stores';
 import { authFilesApi, configFileApi } from '@/services/api';
 import { Input } from '@/components/ui/Input';
@@ -16,7 +17,8 @@ import {
   CLAUDE_CONFIG,
   CODEX_CONFIG,
   GEMINI_CLI_CONFIG,
-  KIMI_CONFIG
+  KIMI_CONFIG,
+  XAI_CONFIG
 } from '@/components/quota';
 import type { QuotaSortMode } from '@/components/quota/quotaConfigs';
 import type { AuthFileItem } from '@/types';
@@ -30,7 +32,10 @@ export function QuotaPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortMode, setSortMode] = useState<QuotaSortMode>('default');
+  const [sortMode, setSortMode] = useLocalStorage<QuotaSortMode>(
+    'quotaPage.sortMode',
+    'default'
+  );
 
   const disableControls = connectionStatus !== 'connected';
   const sortOptions = useMemo(
@@ -146,6 +151,14 @@ export function QuotaPage() {
       />
       <QuotaSection
         config={KIMI_CONFIG}
+        files={files}
+        loading={loading}
+        disabled={disableControls}
+        searchQuery={searchQuery}
+        sortMode={sortMode}
+      />
+      <QuotaSection
+        config={XAI_CONFIG}
         files={files}
         loading={loading}
         disabled={disableControls}
